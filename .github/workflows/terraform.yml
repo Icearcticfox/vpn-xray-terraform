@@ -92,6 +92,31 @@ jobs:
           echo "xray_server_name=$XRAY_SERVER_NAME" >> $GITHUB_OUTPUT
           echo "✓ Extracted outputs: IP=$DROPLET_IP, Port=$XRAY_PORT, Server=$XRAY_SERVER_NAME"
 
+  install-xray:
+    name: Install Xray
+    runs-on: ubuntu-latest
+    needs: terraform
+    if: github.ref == 'refs/heads/master' && needs.terraform.result == 'success'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "✓ SSH key configured"
+
+      - name: Install Xray
+        run: |
+          ./scripts/install-xray.sh \
+            "${{ needs.terraform.outputs.droplet_ip }}" \
+            "${{ needs.terraform.outputs.xray_port }}" \
+            "${{ needs.terraform.outputs.xray_server_name }}" \
+            "${{ secrets.SSH_PRIVATE_KEY }}"
+
   generate-config:
     name: Generate Client Config
     runs-on: ubuntu-latest

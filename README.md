@@ -1,15 +1,15 @@
 # vpn-xray-terraform
 
-Terraform project that provisions a minimal DigitalOcean droplet and installs Xray (VLESS Reality) via cloud-init.
+Terraform project that provisions a minimal DigitalOcean droplet (Terraform) and installs Xray (VLESS Reality) in a separate CI job.
 
 ## Features
 
-- ✅ Automated Xray (VLESS Reality) server deployment
+- ✅ Automated droplet + firewall provisioning
+- ✅ Xray installation via CI job (SSH)
 - ✅ DigitalOcean firewall configuration for security
 - ✅ Configurable Xray port and server name via variables
 - ✅ SSH access control via firewall rules
 - ✅ Comprehensive outputs (IP addresses, SSH command, config info)
-- ✅ Automatic Xray updates via systemd timer
 
 ## Prerequisites
 - Terraform >= 1.7.0
@@ -196,14 +196,15 @@ The firewall automatically:
 
 The workflow consists of two jobs that run automatically:
 
-1. **terraform** - Creates infrastructure (droplet, firewall, installs Xray)
+1. **terraform** - Creates infrastructure (droplet + firewall)
    - Runs on: Pull Requests (plan only) and Push to master (apply)
-   
-2. **generate-config** - Generates client configuration and sends to Telegram
-   - Runs on: Push to master (only after terraform job succeeds)
-   - Waits for cloud-init to complete
-   - Generates client configs
-   - Sends to Telegram (if configured)
+   - Exposes outputs: droplet_ip, xray_port, xray_server_name
+
+2. **install-xray** - Installs Xray on the droplet via SSH
+   - Runs on: Push to master (after terraform job succeeds)
+
+3. **generate-config** - Generates client configuration and sends to Telegram
+   - Runs on: Push to master (after terraform job succeeds; you can make it depend on install-xray if needed)
 
 ### Required GitHub Secrets
 
