@@ -1,0 +1,169 @@
+---
+- hosts: all
+  become: yes
+  gather_facts: false
+
+  vars:
+    xray_arch: linux-64
+    xray_force_regen: false
+
+  tasks:
+    - name: Check credentials presence
+      stat:
+        path: /root/xray-credentials.json
+      register: creds_stat
+      changed_when: false
+
+    - name: Decide if regeneration needed
+      set_fact:
+        xray_regen_needed: "{{ xray_force_regen | bool or (not creds_stat.stat.exists) }}"
+      changed_when: false
+
+    - name: Install dependencies
+      apt:
+        name:
+          - curl
+          - unzip
+          - jq
+        update_cache: yes
+        state: present
+
+    - name: Get latest Xray tag
+      shell: |
+        set -e
+        curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name'
+      register: xray_tag
+      changed_when: false
+
+    - name: Download Xray archive
+      get_url:
+        url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_tag.stdout }}/Xray-{{ xray_arch }}.zip"
+        dest: /tmp/xray.zip
+        mode: '0644'
+
+    - name: Unzip Xray archive
+      unarchive:
+        src: /tmp/xray.zip
+        dest: /tmp/xray
+        remote_src: yes
+        creates: /tmp/xray/xray
+
+    - name: Install Xray binaries and data
+      shell: |
+        set -e
+        install -d /usr/local/bin /usr/local/share/xray
+        install -m 755 /tmp/xray/xray /usr/local/bin/xray
+        install -m 644 /tmp/xray/geoip.dat /usr/local/share/xray/geoip.dat
+        install -m 644 /tmp/xray/geosite.dat /usr/local/share/xray/geosite.dat
+      args:
+        creates: /usr/local/bin/xray
+
+    - name: Clean temp files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/xray
+        - /tmp/xray.zip
+
+    - name: Generate keys and ids
+      shell: |
+        set -e
+        UUID=$(cat /proc/sys/kernel/random/uuid)
+        KEYS=$(/usr/local/bin/xray x25519)
+        PRIVATE_KEY=$(echo "$KEYS" | awk '/Private key/ {print $3}')
+        PUBLIC_KEY=$(echo "$KEYS" | awk '/Public key/ {print $3}')
+        SHORT_ID=$(openssl rand -hex 8)
+        echo "UUID=$UUID"
+        echo "PRIVATE_KEY=$PRIVATE_KEY"
+        echo "PUBLIC_KEY=$PUBLIC_KEY"
+        echo "SHORT_ID=$SHORT_ID"
+      register: xray_keys
+      changed_when: false
+      when: xray_regen_needed
+
+    - name: Parse generated values
+      set_fact:
+        xray_uuid: "{{ xray_keys.stdout_lines | select('match','^UUID=') | list | first | regex_replace('^UUID=','') }}"
+        xray_private_key: "{{ xray_keys.stdout_lines | select('match','^PRIVATE_KEY=') | list | first | regex_replace('^PRIVATE_KEY=','') }}"
+        xray_public_key: "{{ xray_keys.stdout_lines | select('match','^PUBLIC_KEY=') | list | first | regex_replace('^PUBLIC_KEY=','') }}"
+        xray_short_id: "{{ xray_keys.stdout_lines | select('match','^SHORT_ID=') | list | first | regex_replace('^SHORT_ID=','') }}"
+      when: xray_regen_needed
+
+    - name: Write Xray config
+      copy:
+        dest: /etc/xray/config.json
+        mode: '0644'
+        content: |
+          {
+            "log": { "loglevel": "warning" },
+            "inbounds": [{
+              "listen": "0.0.0.0",
+              "port": {{ xray_port }},
+              "protocol": "vless",
+              "settings": {
+                "clients": [{ "id": "{{ xray_uuid }}", "flow": "xtls-rprx-vision" }],
+                "decryption": "none"
+              },
+              "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                  "show": false,
+                  "dest": "{{ xray_server_name }}:443",
+                  "xver": 0,
+                  "serverNames": ["{{ xray_server_name }}"],
+                  "privateKey": "{{ xray_private_key }}",
+                  "shortIds": ["{{ xray_short_id }}"]
+                }
+              }
+            }],
+            "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+          }
+      when: xray_regen_needed
+      notify: Restart xray
+
+    - name: Write credentials
+      copy:
+        dest: /root/xray-credentials.json
+        mode: '0600'
+        content: |
+          {
+            "uuid": "{{ xray_uuid }}",
+            "public_key": "{{ xray_public_key }}",
+            "short_id": "{{ xray_short_id }}"
+          }
+      when: xray_regen_needed
+
+    - name: Systemd unit for Xray
+      copy:
+        dest: /etc/systemd/system/xray.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Xray Service
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/xray run -c /etc/xray/config.json
+          Restart=on-failure
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Xray
+      systemd:
+        name: xray
+        enabled: yes
+        state: started
+      listen: "Restart xray"
+
+  handlers:
+    - name: Restart xray
+      systemd:
+        name: xray
+        enabled: yes
+        state: restarted

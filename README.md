@@ -200,7 +200,7 @@ The workflow consists of two jobs that run automatically:
    - Runs on: Pull Requests (plan only) and Push to master (apply)
    - Exposes outputs: droplet_ip, xray_port, xray_server_name
 
-2. **install-xray** - Installs Xray on the droplet via SSH
+2. **install-xray** - Installs Xray via Ansible
    - Runs on: Push to master (after terraform job succeeds)
 
 3. **generate-config** - Generates client configuration and sends to Telegram

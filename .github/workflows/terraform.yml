@@ -109,13 +109,19 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo "✓ SSH key configured"
 
-      - name: Install Xray
+      - name: Install Ansible
         run: |
-          ./scripts/install-xray.sh \
-            "${{ needs.terraform.outputs.droplet_ip }}" \
-            "${{ needs.terraform.outputs.xray_port }}" \
-            "${{ needs.terraform.outputs.xray_server_name }}" \
-            "${{ secrets.SSH_PRIVATE_KEY }}"
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Install Xray via Ansible
+        run: |
+          ansible-playbook -i "${{ needs.terraform.outputs.droplet_ip }}," \
+            -u root \
+            --private-key ~/.ssh/id_rsa \
+            --ssh-common-args="-o StrictHostKeyChecking=no" \
+            ansible/install-xray.yml \
+            -e "xray_port=${{ needs.terraform.outputs.xray_port }} xray_server_name=${{ needs.terraform.outputs.xray_server_name }}"
 
   generate-config:
     name: Generate Client Config

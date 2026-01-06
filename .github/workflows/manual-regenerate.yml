@@ -1,0 +1,80 @@
+name: Manual Regenerate Xray Credentials
+
+on:
+  workflow_dispatch:
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
+      TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "✓ SSH key configured"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+          cli_config_credentials_token: ${{ secrets.TERRAFORM_XRAY }}
+
+      - name: Create terraform.auto.tfvars file
+        run: |
+          python3 << 'PYTHON'
+          import os
+          with open('terraform.auto.tfvars', 'w') as f:
+              f.write(f'do_token = "{os.environ["DO_TOKEN"]}"\n')
+              f.write(f'ssh_key_fingerprint = "{os.environ["SSH_FINGERPRINT"]}"\n')
+          print("✓ Created terraform.auto.tfvars file")
+          PYTHON
+        env:
+          DO_TOKEN: ${{ secrets.DIGITAL_OCEAN }}
+          SSH_FINGERPRINT: ${{ secrets.ICEFOX_FINGERPRINT }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Get Terraform Outputs
+        id: terraform_outputs
+        run: |
+          DROPLET_IP=$(terraform output -raw droplet_ip)
+          XRAY_PORT=$(terraform output -json xray_config_info | jq -r '.port')
+          XRAY_SERVER_NAME=$(terraform output -json xray_config_info | jq -r '.server_name')
+          echo "droplet_ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+          echo "xray_port=$XRAY_PORT" >> $GITHUB_OUTPUT
+          echo "xray_server_name=$XRAY_SERVER_NAME" >> $GITHUB_OUTPUT
+          echo "✓ Extracted outputs: IP=$DROPLET_IP, Port=$XRAY_PORT, Server=$XRAY_SERVER_NAME"
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Regenerate Xray credentials via Ansible
+        run: |
+          ansible-playbook -i "${{ steps.terraform_outputs.outputs.droplet_ip }}," \
+            -u root \
+            --private-key ~/.ssh/id_rsa \
+            --ssh-common-args="-o StrictHostKeyChecking=no" \
+            ansible/install-xray.yml \
+            -e "xray_port=${{ steps.terraform_outputs.outputs.xray_port }} xray_server_name=${{ steps.terraform_outputs.outputs.xray_server_name }} xray_force_regen=true"
+
+      - name: Generate Client Configuration
+        run: |
+          ./scripts/generate-config.sh \
+            "${{ steps.terraform_outputs.outputs.droplet_ip }}" \
+            "${{ steps.terraform_outputs.outputs.xray_port }}" \
+            "${{ steps.terraform_outputs.outputs.xray_server_name }}" \
+            "${{ secrets.SSH_PRIVATE_KEY }}" \
+            "${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            "${{ secrets.TELEGRAM_CHAT_ID }}"
+
