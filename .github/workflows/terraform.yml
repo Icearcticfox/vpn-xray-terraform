@@ -30,12 +30,42 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Check required secrets
+        run: |
+          if [ -z "$TF_VAR_do_token" ]; then
+            echo "Error: DIGITAL_OCEAN secret is not set"
+            exit 1
+          fi
+          if [ -z "$TF_VAR_ssh_key_fingerprint" ]; then
+            echo "Error: ICEFOX_FINGERPRINT secret is not set"
+            exit 1
+          fi
+          echo "Required secrets are set"
+        env:
+          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
+          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+
       - name: Terraform Validate
         run: terraform validate
+        env:
+          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
+          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Plan
         run: terraform plan
+        env:
+          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
+          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/master'
         run: terraform apply -auto-approve
+        env:
+          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
+          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
