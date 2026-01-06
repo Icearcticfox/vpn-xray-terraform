@@ -41,6 +41,12 @@
         dest: /tmp/xray.zip
         mode: '0644'
 
+    - name: Ensure temp directory exists
+      file:
+        path: /tmp/xray
+        state: directory
+        mode: '0755'
+
     - name: Unzip Xray archive
       unarchive:
         src: /tmp/xray.zip
