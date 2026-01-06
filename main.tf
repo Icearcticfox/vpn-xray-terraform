@@ -45,9 +45,18 @@ resource "null_resource" "generate_client_config" {
   provisioner "local-exec" {
     command = <<-EOT
       sleep 30
+      # Create SSH key file if using ssh_private_key variable
+      if [ -n "${var.ssh_private_key}" ]; then
+        mkdir -p ~/.ssh
+        echo "${var.ssh_private_key}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        SSH_KEY_PATH=~/.ssh/id_rsa
+      else
+        SSH_KEY_PATH=${pathexpand(var.ssh_private_key_path)}
+      fi
       # Wait for credentials file
       for i in {1..30}; do
-        ssh -i ${pathexpand(var.ssh_private_key_path)} -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${digitalocean_droplet.xray.ipv4_address} "test -f /root/xray-credentials.json" && break || sleep 2
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${digitalocean_droplet.xray.ipv4_address} "test -f /root/xray-credentials.json" && break || sleep 2
       done
     EOT
   }
@@ -56,7 +65,7 @@ resource "null_resource" "generate_client_config" {
     type        = "ssh"
     host        = digitalocean_droplet.xray.ipv4_address
     user        = "root"
-    private_key = file(pathexpand(var.ssh_private_key_path))
+    private_key = var.ssh_private_key != "" ? var.ssh_private_key : file(pathexpand(var.ssh_private_key_path))
     timeout     = "5m"
   }
 
@@ -64,7 +73,16 @@ resource "null_resource" "generate_client_config" {
   provisioner "local-exec" {
     command = <<-EOT
       mkdir -p ${path.module}/.terraform
-      scp -i ${pathexpand(var.ssh_private_key_path)} -o StrictHostKeyChecking=no root@${digitalocean_droplet.xray.ipv4_address}:/root/xray-credentials.json ${path.module}/.terraform/xray-credentials.json
+      # Determine SSH key path
+      if [ -n "${var.ssh_private_key}" ]; then
+        mkdir -p ~/.ssh
+        echo "${var.ssh_private_key}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        SSH_KEY_PATH=~/.ssh/id_rsa
+      else
+        SSH_KEY_PATH=${pathexpand(var.ssh_private_key_path)}
+      fi
+      scp -i $SSH_KEY_PATH -o StrictHostKeyChecking=no root@${digitalocean_droplet.xray.ipv4_address}:/root/xray-credentials.json ${path.module}/.terraform/xray-credentials.json
     EOT
   }
 

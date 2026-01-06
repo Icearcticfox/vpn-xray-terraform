@@ -68,13 +68,25 @@ jobs:
 
       - name: Create terraform.tfvars file
         run: |
-          cat > terraform.auto.tfvars <<EOF
-          do_token = "${{ secrets.DIGITAL_OCEAN }}"
-          ssh_key_fingerprint = "${{ secrets.ICEFOX_FINGERPRINT }}"
-          telegram_bot_token = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-          telegram_chat_id = "${{ secrets.TELEGRAM_CHAT_ID }}"
-          EOF
-          echo "✓ Created terraform.auto.tfvars file"
+          python3 << 'PYTHON'
+          import os
+          
+          with open('terraform.auto.tfvars', 'w') as f:
+              f.write(f'do_token = "{os.environ["DO_TOKEN"]}"\n')
+              f.write(f'ssh_key_fingerprint = "{os.environ["SSH_FINGERPRINT"]}"\n')
+              f.write('ssh_private_key = <<-EOT\n')
+              f.write(f'{os.environ["SSH_PRIVATE_KEY"]}\n')
+              f.write('EOT\n')
+              f.write(f'telegram_bot_token = "{os.environ.get("TELEGRAM_BOT_TOKEN", "")}"\n')
+              f.write(f'telegram_chat_id = "{os.environ.get("TELEGRAM_CHAT_ID", "")}"\n')
+          print("✓ Created terraform.auto.tfvars file")
+          PYTHON
+        env:
+          DO_TOKEN: ${{ secrets.DIGITAL_OCEAN }}
+          SSH_FINGERPRINT: ${{ secrets.ICEFOX_FINGERPRINT }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Init
         run: terraform init
