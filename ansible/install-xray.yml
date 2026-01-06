@@ -159,7 +159,6 @@
         name: xray
         enabled: yes
         state: started
-      listen: "Restart xray"
 
   handlers:
     - name: Restart xray
