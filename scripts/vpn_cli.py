@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import NoReturn, Optional
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 import xray_reality_qr
 
@@ -74,9 +75,15 @@ def tg_send_message(bot_token: str, chat_id: str, text: str) -> None:
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     data = urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
     req = Request(url, data=data, method="POST")
-    with urlopen(req, timeout=20) as resp:
-        if resp.status >= 300:
-            raise UserError(f"Telegram sendMessage failed: HTTP {resp.status}")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urlopen(req, timeout=20) as resp:
+            if resp.status >= 300:
+                body = resp.read().decode("utf-8", errors="replace")
+                raise UserError(f"Telegram sendMessage failed: HTTP {resp.status}\nResponse: {body}")
+    except HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
+        raise UserError(f"Telegram sendMessage failed: HTTP {e.code}\nResponse: {body}")
 
 
 def _multipart_form(fields: dict[str, str], files: dict[str, Path]) -> tuple[bytes, str]:
