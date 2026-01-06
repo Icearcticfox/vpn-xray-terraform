@@ -36,7 +36,7 @@ variable "xray_port" {
 variable "xray_server_name" {
   description = "Xray Reality server name (SNI)"
   type        = string
-  default     = "www.ozon.ru"
+  default     = "www.microsoft.com"
 }
 
 variable "allowed_ssh_ips" {
