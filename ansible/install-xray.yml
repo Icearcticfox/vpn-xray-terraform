@@ -112,7 +112,9 @@
             (not xray_config_stat.stat.exists)
             or (not xray_creds_stat.stat.exists)
             or ((xray_cfg_private_key.stdout | default('') | trim) == '')
+            or (not ((xray_cfg_private_key.stdout | default('') | trim) is match('^[A-Za-z0-9_-]{40,}$')))
             or ((xray_cfg_short_id.stdout | default('') | trim) == '')
+            or (not ((xray_cfg_short_id.stdout | default('') | trim) is match('^[0-9a-f]{16}$')))
           }}
       changed_when: false
 
@@ -138,8 +140,26 @@
     - name: Parse Reality keys
       set_fact:
         xray_uuid: "{{ xray_uuid_cmd.stdout | trim }}"
-        xray_private_key: "{{ (xray_x25519_cmd.stdout | regex_search('PrivateKey:\\s*([^\\s]+)', '\\1')) | default('') }}"
-        xray_public_key: "{{ (xray_x25519_cmd.stdout | regex_search('(Password|PublicKey):\\s*([^\\s]+)', '\\2')) | default('') }}"
+        xray_private_key: >-
+          {{
+            (
+              (xray_x25519_cmd.stdout | regex_search('PrivateKey:\\s*([^\\s]+)', '\\1'))
+              | default('')
+              | string
+              | regex_replace("^\\['", "")
+              | regex_replace("'\\]$", "")
+            )
+          }}
+        xray_public_key: >-
+          {{
+            (
+              (xray_x25519_cmd.stdout | regex_search('(Password|PublicKey):\\s*([^\\s]+)', '\\2'))
+              | default('')
+              | string
+              | regex_replace("^\\['", "")
+              | regex_replace("'\\]$", "")
+            )
+          }}
       changed_when: false
       when: xray_regen_needed
 
