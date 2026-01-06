@@ -1,4 +1,4 @@
-name: Terraform Xray Apply
+name: Terraform Xray Deploy
 
 on:
   push:
@@ -7,15 +7,17 @@ on:
 
 jobs:
   terraform:
-    name: Terraform
+    name: Terraform - Create Infrastructure
     runs-on: ubuntu-latest
+    outputs:
+      droplet_ip: ${{ steps.terraform_outputs.outputs.droplet_ip }}
+      xray_port: ${{ steps.terraform_outputs.outputs.xray_port }}
+      xray_server_name: ${{ steps.terraform_outputs.outputs.xray_server_name }}
 
     env:
       TF_IN_AUTOMATION: true
       TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
       TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
-      TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - name: Checkout code
@@ -32,16 +34,11 @@ jobs:
           echo "=== Debug: Checking secrets ==="
           echo "DIGITAL_OCEAN secret exists: $([ -n "${{ secrets.DIGITAL_OCEAN }}" ] && echo 'YES' || echo 'NO')"
           echo "ICEFOX_FINGERPRINT secret exists: $([ -n "${{ secrets.ICEFOX_FINGERPRINT }}" ] && echo 'YES' || echo 'NO')"
-          echo "SSH_PRIVATE_KEY secret exists: $([ -n "${{ secrets.SSH_PRIVATE_KEY }}" ] && echo 'YES' || echo 'NO')"
           echo "TERRAFORM_XRAY secret exists: $([ -n "${{ secrets.TERRAFORM_XRAY }}" ] && echo 'YES' || echo 'NO')"
-          echo "TELEGRAM_BOT_TOKEN secret exists: $([ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo 'YES' || echo 'NO')"
-          echo "TELEGRAM_CHAT_ID secret exists: $([ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && echo 'YES' || echo 'NO')"
           echo ""
           echo "=== Debug: Environment variables ==="
           echo "TF_VAR_do_token length: ${#TF_VAR_do_token}"
           echo "TF_VAR_ssh_key_fingerprint length: ${#TF_VAR_ssh_key_fingerprint}"
-          echo "TF_VAR_telegram_bot_token length: ${#TF_VAR_telegram_bot_token}"
-          echo "TF_VAR_telegram_chat_id length: ${#TF_VAR_telegram_chat_id}"
           echo ""
           if [ -z "$TF_VAR_do_token" ]; then
             echo "ERROR: TF_VAR_do_token is empty!"
@@ -55,18 +52,8 @@ jobs:
         env:
           TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
           TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
-          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-          echo "✓ SSH key configured"
-
-      - name: Create terraform.tfvars file
+      - name: Create terraform.auto.tfvars file
         run: |
           python3 << 'PYTHON'
           import os
@@ -74,19 +61,11 @@ jobs:
           with open('terraform.auto.tfvars', 'w') as f:
               f.write(f'do_token = "{os.environ["DO_TOKEN"]}"\n')
               f.write(f'ssh_key_fingerprint = "{os.environ["SSH_FINGERPRINT"]}"\n')
-              f.write('ssh_private_key = <<-EOT\n')
-              f.write(f'{os.environ["SSH_PRIVATE_KEY"]}\n')
-              f.write('EOT\n')
-              f.write(f'telegram_bot_token = "{os.environ.get("TELEGRAM_BOT_TOKEN", "")}"\n')
-              f.write(f'telegram_chat_id = "{os.environ.get("TELEGRAM_CHAT_ID", "")}"\n')
           print("✓ Created terraform.auto.tfvars file")
           PYTHON
         env:
           DO_TOKEN: ${{ secrets.DIGITAL_OCEAN }}
           SSH_FINGERPRINT: ${{ secrets.ICEFOX_FINGERPRINT }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Init
         run: terraform init
@@ -100,3 +79,42 @@ jobs:
       - name: Terraform Apply
         if: github.ref == 'refs/heads/master'
         run: terraform apply -auto-approve
+
+      - name: Get Terraform Outputs
+        if: github.ref == 'refs/heads/master'
+        id: terraform_outputs
+        run: |
+          DROPLET_IP=$(terraform output -raw droplet_ip)
+          XRAY_PORT=$(terraform output -json xray_config_info | jq -r '.port')
+          XRAY_SERVER_NAME=$(terraform output -json xray_config_info | jq -r '.server_name')
+          echo "droplet_ip=$DROPLET_IP" >> $GITHUB_OUTPUT
+          echo "xray_port=$XRAY_PORT" >> $GITHUB_OUTPUT
+          echo "xray_server_name=$XRAY_SERVER_NAME" >> $GITHUB_OUTPUT
+          echo "✓ Extracted outputs: IP=$DROPLET_IP, Port=$XRAY_PORT, Server=$XRAY_SERVER_NAME"
+
+  generate-config:
+    name: Generate Client Config
+    runs-on: ubuntu-latest
+    needs: terraform
+    if: github.ref == 'refs/heads/master' && needs.terraform.result == 'success'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "✓ SSH key configured"
+
+      - name: Generate Client Configuration
+        run: |
+          ./scripts/generate-config.sh \
+            "${{ needs.terraform.outputs.droplet_ip }}" \
+            "${{ needs.terraform.outputs.xray_port }}" \
+            "${{ needs.terraform.outputs.xray_server_name }}" \
+            "${{ secrets.SSH_PRIVATE_KEY }}" \
+            "${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            "${{ secrets.TELEGRAM_CHAT_ID }}"

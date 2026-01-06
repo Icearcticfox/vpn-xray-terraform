@@ -12,7 +12,7 @@ variable "ssh_key_fingerprint" {
 variable "region" {
   description = "DigitalOcean region for the droplet"
   type        = string
-  default     = "fra1"
+  default     = "sgp1"
 }
 
 variable "size" {
@@ -43,31 +43,4 @@ variable "allowed_ssh_ips" {
   description = "List of IP addresses/CIDR blocks allowed to SSH"
   type        = list(string)
   default     = ["0.0.0.0/0", "::/0"]
-}
-
-variable "telegram_bot_token" {
-  description = "Telegram bot token for sending client config (optional)"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "telegram_chat_id" {
-  description = "Telegram chat ID or channel username (e.g., @channel or -1001234567890)"
-  type        = string
-  default     = ""
-}
-
-variable "ssh_private_key_path" {
-  description = "Path to SSH private key for remote-exec (optional, defaults to ~/.ssh/id_rsa)"
-  type        = string
-  default     = "~/.ssh/id_rsa"
-  sensitive   = true
-}
-
-variable "ssh_private_key" {
-  description = "SSH private key content (alternative to ssh_private_key_path, for CI/CD)"
-  type        = string
-  default     = ""
-  sensitive   = true
 }

@@ -45,8 +45,6 @@ The Terraform Cloud backend is already configured for organization `icefox_infra
 - `xray_port` - Xray server port (default: `443`)
 - `xray_server_name` - Xray Reality server name/SNI (default: `www.cloudflare.com`)
 - `allowed_ssh_ips` - List of IP addresses/CIDR blocks allowed to SSH (default: `["0.0.0.0/0", "::/0"]`)
-- `telegram_bot_token` - Telegram bot token for sending client config (optional)
-- `telegram_chat_id` - Telegram chat ID or channel username (e.g., `@channel` or `-1001234567890`)
 
 ### Example: Custom Configuration
 ```hcl
@@ -71,25 +69,12 @@ To automatically send client configuration to a Telegram channel:
    - Look for `"chat":{"id":-1001234567890}` (negative number for channels)
    - Or use channel username: `@your_channel_name`
 
-3. **Configure in Terraform:**
-   ```hcl
-   terraform apply \
-     -var="telegram_bot_token=123456789:ABCdefGHIjklMNOpqrsTUVwxyz" \
-     -var="telegram_chat_id=-1001234567890"
-   ```
-
-   Or export as environment variables:
-   ```bash
-   export TF_VAR_telegram_bot_token="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-   export TF_VAR_telegram_chat_id="-1001234567890"
-   ```
-
-4. **For GitHub Actions:**
+3. **For GitHub Actions:**
    Add secrets:
    - `TELEGRAM_BOT_TOKEN` - Bot token
    - `TELEGRAM_CHAT_ID` - Chat ID or channel username
 
-   Then update workflow to include these variables.
+   The configuration will be automatically sent to Telegram after the server is deployed.
 
 ## Outputs
 
@@ -103,7 +88,7 @@ After applying, Terraform will output:
 
 ## Client Configuration
 
-After the server is deployed, you need to get the client configuration:
+After the server is deployed, the client configuration is automatically generated and sent to Telegram (if configured).
 
 1. **Get client data from server:**
    ```bash
@@ -115,7 +100,7 @@ After the server is deployed, you need to get the client configuration:
    **Or check Telegram channel** (if Telegram integration is configured):
    - Text configuration will be sent as a message
    - JSON configuration file will be sent as a document attachment
-   - Both are automatically sent after server setup
+   - Both are automatically sent after server setup completes
 
 2. **You'll get data like this:**
    ```
@@ -209,9 +194,16 @@ The firewall automatically:
 
 ## GitHub Actions
 
-The workflow automatically runs on:
-- **Pull Requests**: Validates and plans changes
-- **Push to master**: Applies changes automatically
+The workflow consists of two jobs that run automatically:
+
+1. **terraform** - Creates infrastructure (droplet, firewall, installs Xray)
+   - Runs on: Pull Requests (plan only) and Push to master (apply)
+   
+2. **generate-config** - Generates client configuration and sends to Telegram
+   - Runs on: Push to master (only after terraform job succeeds)
+   - Waits for cloud-init to complete
+   - Generates client configs
+   - Sends to Telegram (if configured)
 
 ### Required GitHub Secrets
 
@@ -226,7 +218,7 @@ Add these secrets in your repository (Settings → Secrets and variables → Act
 3. **SSH_PRIVATE_KEY** - SSH private key content (the same key used in DigitalOcean)
    - Get your private key: `cat ~/.ssh/id_rsa` (or path to your SSH key)
    - Copy the entire key including `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`
-   - This key is used by Terraform to connect to the droplet for configuration
+   - Used by the generate-config job to connect to the droplet
 
 4. **TERRAFORM_XRAY** - Terraform Cloud user token
    - Generate at: https://app.terraform.io/app/settings/tokens
