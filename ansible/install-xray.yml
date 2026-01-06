@@ -6,8 +6,36 @@
   vars:
     xray_arch: linux-64
     xray_force_regen: false
+    xray_binary_stat:
+      stat:
+        exists: false
 
   tasks:
+    - name: Check xray binary presence
+      stat:
+        path: /usr/local/bin/xray
+      register: xray_binary_stat
+      changed_when: false
+
+    - name: Read current Xray version if present
+      shell: cat /usr/local/share/xray/version
+      register: xray_current_version
+      changed_when: false
+      failed_when: false
+      when: xray_binary_stat.stat.exists
+
+    - name: Get latest Xray tag
+      shell: |
+        set -e
+        curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name'
+      register: xray_tag
+      changed_when: false
+
+    - name: Decide if Xray install/update needed
+      set_fact:
+        xray_install_needed: "{{ (not xray_binary_stat.stat.exists) or (xray_tag.stdout | default('') != (xray_current_version.stdout | default(''))) }}"
+      changed_when: false
+
     - name: Check credentials presence
       stat:
         path: /root/xray-credentials.json
@@ -28,23 +56,22 @@
         update_cache: yes
         state: present
 
-    - name: Get latest Xray tag
-      shell: |
-        set -e
-        curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name'
-      register: xray_tag
-      changed_when: false
     - name: Download Xray archive
       get_url:
         url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_tag.stdout }}/Xray-{{ xray_arch }}.zip"
         dest: /tmp/xray.zip
         mode: '0644'
+      when: xray_install_needed
 
-    - name: Ensure temp directory exists
+    - name: Ensure install directories exist
       file:
-        path: /tmp/xray
+        path: "{{ item }}"
         state: directory
         mode: '0755'
+      loop:
+        - /tmp/xray
+        - /usr/local/share/xray
+      when: xray_install_needed
 
     - name: Unzip Xray archive
       unarchive:
@@ -52,7 +79,7 @@
         dest: /tmp/xray
         remote_src: yes
         creates: /tmp/xray/xray
-      when: not xray_binary_stat.stat.exists
+      when: xray_install_needed
 
     - name: Install Xray binaries and data
       shell: |
@@ -61,8 +88,10 @@
         install -m 755 /tmp/xray/xray /usr/local/bin/xray
         install -m 644 /tmp/xray/geoip.dat /usr/local/share/xray/geoip.dat
         install -m 644 /tmp/xray/geosite.dat /usr/local/share/xray/geosite.dat
+        echo "{{ xray_tag.stdout }}" > /usr/local/share/xray/version
       args:
         creates: /usr/local/bin/xray
+      when: xray_install_needed
 
     - name: Clean temp files
       file:
@@ -71,6 +100,7 @@
       loop:
         - /tmp/xray
         - /tmp/xray.zip
+      when: xray_install_needed
 
     - name: Generate keys and ids
       shell: |
@@ -96,11 +126,13 @@
         xray_short_id: "{{ xray_keys.stdout_lines | select('match','^SHORT_ID=') | list | first | regex_replace('^SHORT_ID=','') }}"
       when: xray_regen_needed
 
-    - name: Ensure /etc/xray exists
+    - name: Ensure config directories exist
       file:
-        path: /etc/xray
+        path: "{{ item }}"
         state: directory
         mode: '0755'
+      loop:
+        - /etc/xray
       when: xray_regen_needed
 
     - name: Write Xray config
