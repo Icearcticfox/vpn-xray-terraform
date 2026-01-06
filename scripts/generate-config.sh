@@ -56,6 +56,24 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     echo "[SUCCESS] xray-credentials.json found!"
     break
   fi
+  
+  # Show progress and status every 5 attempts
+  if [ $((ATTEMPT % 5)) -eq 0 ] && [ $ATTEMPT -gt 0 ]; then
+    echo ""
+    echo "[INFO] === Checking server status (attempt $ATTEMPT) ==="
+    echo "[INFO] Checking if Xray binary exists..."
+    ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "test -f /usr/local/bin/xray && echo '✓ Xray binary exists' || echo '✗ Xray binary NOT found'" || true
+    echo "[INFO] Checking Xray version..."
+    ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "/usr/local/bin/xray version 2>&1 | head -3 || echo 'Xray not executable'" || true
+    echo "[INFO] Checking if config exists..."
+    ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "test -f /etc/xray/config.json && echo '✓ Config exists' || echo '✗ Config NOT found'" || true
+    echo "[INFO] Checking Xray service status..."
+    ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "systemctl is-active xray.service 2>&1 || systemctl status xray.service --no-pager -l 2>&1 | head -10 || echo 'Service check failed'" || true
+    echo "[INFO] Checking bootstrap log (last 10 lines)..."
+    ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "tail -10 /var/log/xray-bootstrap.log 2>/dev/null || echo 'No bootstrap log yet'" || true
+    echo ""
+  fi
+  
   ATTEMPT=$((ATTEMPT + 1))
   echo "[INFO] Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting for credentials file..."
   sleep 5
@@ -70,13 +88,36 @@ if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
   echo "=== Cloud-init logs (last 50 lines) ==="
   ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "tail -50 /var/log/cloud-init-output.log || tail -50 /var/log/cloud-init.log || echo 'No cloud-init logs found'"
   echo ""
-  echo "=== Xray bootstrap logs ==="
-  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "test -f /var/log/xray-bootstrap.log && tail -50 /var/log/xray-bootstrap.log || echo 'No xray-bootstrap.log found'"
+  echo "=== Xray bootstrap logs (full) ==="
+  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "test -f /var/log/xray-bootstrap.log && cat /var/log/xray-bootstrap.log || echo 'No xray-bootstrap.log found'"
+  echo ""
+  echo "=== Xray binary check ==="
+  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "ls -la /usr/local/bin/xray 2>&1 || echo 'Binary not found'; /usr/local/bin/xray version 2>&1 || echo 'Version check failed'"
+  echo ""
+  echo "=== Xray service status ==="
+  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "systemctl status xray.service --no-pager -l || true"
+  echo ""
+  echo "=== Xray service logs (last 30 lines) ==="
+  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "journalctl -u xray.service -n 30 --no-pager || true"
   echo ""
   echo "=== /root directory contents ==="
   ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "ls -la /root/ || true"
+  echo ""
+  echo "=== /etc/xray directory contents ==="
+  ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "ls -la /etc/xray/ 2>&1 || true"
   exit 1
 fi
+
+# Show final status after credentials are found
+echo ""
+echo "[INFO] === Final server status check ==="
+echo "[INFO] Xray binary:"
+ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "/usr/local/bin/xray version 2>&1 || echo 'Version check failed'" || true
+echo "[INFO] Xray service status:"
+ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "systemctl is-active xray.service && echo '✓ Service is active' || echo '✗ Service is NOT active'; systemctl status xray.service --no-pager -l 2>&1 | head -15 || true" || true
+echo "[INFO] Xray listening on port:"
+ssh -i "$SSH_KEY_PATH" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@"$SERVER_IP" "ss -tlnp | grep :$XRAY_PORT || echo 'Port not listening'" || true
+echo ""
 
 # Copy credentials file from server
 echo "[INFO] Copying credentials file from server..."

@@ -29,8 +29,13 @@ resource "digitalocean_droplet" "xray" {
   image     = "ubuntu-24-04-x64"
   ssh_keys  = [var.ssh_key_fingerprint]
   user_data = templatefile("${path.module}/cloud-init.yaml", {
-    xray_port        = var.xray_port
-    xray_server_name = var.xray_server_name
+    xray_port            = var.xray_port
+    xray_server_name     = var.xray_server_name
+    xray_update_script   = file("${path.module}/scripts/xray-update.sh")
+    xray_bootstrap_script = templatefile("${path.module}/scripts/xray-bootstrap.sh.tpl", {
+      xray_port        = var.xray_port
+      xray_server_name = var.xray_server_name
+    })
   })
 }
 

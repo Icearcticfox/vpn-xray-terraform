@@ -12,161 +12,11 @@ write_files:
   - path: /usr/local/bin/xray-update
     permissions: "0755"
     owner: root:root
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      echo "[xray-update] Starting Xray update..."
-      arch="linux-64"
-      tmpdir=$(mktemp -d)
-      trap "rm -rf $tmpdir" EXIT
-      
-      echo "[xray-update] Fetching latest release tag..."
-      tag=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name // empty')
-      if [ -z "$tag" ] || [ "$tag" = "null" ]; then
-        echo "[xray-update] ERROR: Failed to determine Xray release tag" >&2
-        exit 1
-      fi
-      echo "[xray-update] Latest tag: $tag"
-      
-      current=""
-      if [ -f /usr/local/share/xray/version ]; then
-        current=$(cat /usr/local/share/xray/version)
-        echo "[xray-update] Current version: $current"
-      else
-        echo "[xray-update] No current version found, will install"
-      fi
-      
-      if [ "$tag" = "$current" ]; then
-        echo "[xray-update] Already up to date, skipping"
-        exit 0
-      fi
-      
-      echo "[xray-update] Downloading Xray $tag..."
-      url="https://github.com/XTLS/Xray-core/releases/download/$${tag}/Xray-$${arch}.zip"
-      if ! curl -fsSL "$url" -o "$tmpdir/xray.zip"; then
-        echo "[xray-update] ERROR: Failed to download Xray" >&2
-        exit 1
-      fi
-      
-      echo "[xray-update] Extracting..."
-      if ! unzip -q "$tmpdir/xray.zip" -d "$tmpdir"; then
-        echo "[xray-update] ERROR: Failed to extract Xray" >&2
-        exit 1
-      fi
-      
-      echo "[xray-update] Installing files..."
-      install -d /usr/local/bin /usr/local/share/xray
-      install -m 755 "$tmpdir/xray" /usr/local/bin/xray
-      install -m 644 "$tmpdir/geoip.dat" /usr/local/share/xray/geoip.dat
-      install -m 644 "$tmpdir/geosite.dat" /usr/local/share/xray/geosite.dat
-      echo "$tag" > /usr/local/share/xray/version
-      
-      echo "[xray-update] Verifying installation..."
-      if /usr/local/bin/xray version > /dev/null 2>&1; then
-        echo "[xray-update] Successfully installed Xray $tag"
-      else
-        echo "[xray-update] ERROR: Xray installation verification failed" >&2
-        exit 1
-      fi
+    content: ${xray_update_script}
   - path: /usr/local/bin/xray-bootstrap
     permissions: "0755"
     owner: root:root
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      
-      echo "[xray-bootstrap] Starting Xray bootstrap..."
-      XRAY_PORT=${xray_port}
-      XRAY_SERVER_NAME="${xray_server_name}"
-      echo "[xray-bootstrap] Port: $${XRAY_PORT}, Server Name: $${XRAY_SERVER_NAME}"
-
-      echo "[xray-bootstrap] Updating Xray..."
-      if ! /usr/local/bin/xray-update; then
-        echo "[xray-bootstrap] ERROR: Failed to update Xray" >&2
-        exit 1
-      fi
-
-      if [ ! -f /etc/xray/config.json ]; then
-        echo "[xray-bootstrap] Generating new configuration..."
-        uuid=$(cat /proc/sys/kernel/random/uuid)
-        echo "[xray-bootstrap] Generated UUID: $${uuid:0:8}..."
-        
-        echo "[xray-bootstrap] Generating X25519 keys..."
-        if ! keys=$(/usr/local/bin/xray x25519 2>&1); then
-          echo "[xray-bootstrap] ERROR: Failed to generate X25519 keys" >&2
-          echo "[xray-bootstrap] Xray output: $keys" >&2
-          exit 1
-        fi
-        private_key=$(echo "$keys" | awk '/Private key/ {print $3}')
-        public_key=$(echo "$keys" | awk '/Public key/ {print $3}')
-        echo "[xray-bootstrap] Generated keys: Public=$${public_key:0:16}..."
-        
-        short_id=$(openssl rand -hex 8)
-        echo "[xray-bootstrap] Generated Short ID: $${short_id}"
-
-        mkdir -p /etc/xray
-
-        cat > /etc/xray/config.json <<CONFIG
-{
-  "log": {
-    "loglevel": "warning"
-  },
-  "inbounds": [
-    {
-      "listen": "0.0.0.0",
-      "port": $${XRAY_PORT},
-      "protocol": "vless",
-      "settings": {
-        "clients": [
-          {
-            "id": "$${uuid}",
-            "flow": "xtls-rprx-vision"
-          }
-        ],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-          "show": false,
-          "dest": "$${XRAY_SERVER_NAME}:443",
-          "xver": 0,
-          "serverNames": [
-            "$${XRAY_SERVER_NAME}"
-          ],
-          "privateKey": "$${private_key}",
-          "shortIds": [
-            "$${short_id}"
-          ]
-        }
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom",
-      "tag": "direct"
-    }
-  ]
-}
-CONFIG
-
-        # Save credentials for Terraform to generate client configs
-        echo "[xray-bootstrap] Saving credentials..."
-        cat > /root/xray-credentials.json <<CREDS
-{
-  "uuid": "$${uuid}",
-  "public_key": "$${public_key}",
-  "short_id": "$${short_id}"
-}
-CREDS
-        echo "[xray-bootstrap] Configuration saved successfully"
-      else
-        echo "[xray-bootstrap] Configuration already exists, skipping generation"
-      fi
-      
-      echo "[xray-bootstrap] Bootstrap completed successfully"
+    content: ${xray_bootstrap_script}
   - path: /etc/systemd/system/xray.service
     permissions: "0644"
     owner: root:root
@@ -212,28 +62,107 @@ CREDS
 
 runcmd:
   - |
+    echo "=========================================="
     echo "=== Starting Xray bootstrap ==="
+    echo "=========================================="
     /usr/local/bin/xray-bootstrap 2>&1 | tee -a /var/log/xray-bootstrap.log
-    echo "=== Bootstrap exit code: $? ==="
+    BOOTSTRAP_EXIT=$?
+    echo "=== Bootstrap exit code: $BOOTSTRAP_EXIT ==="
+    if [ $BOOTSTRAP_EXIT -ne 0 ]; then
+      echo "ERROR: Bootstrap failed with exit code $BOOTSTRAP_EXIT"
+      exit $BOOTSTRAP_EXIT
+    fi
   - |
+    echo "=========================================="
     echo "=== Reloading systemd ==="
+    echo "=========================================="
     systemctl daemon-reload
+    echo "✓ Systemd reloaded"
   - |
+    echo "=========================================="
     echo "=== Enabling and starting Xray service ==="
+    echo "=========================================="
     systemctl enable xray.service
+    echo "✓ Service enabled"
     systemctl start xray.service
-    systemctl status xray.service || true
+    echo "✓ Service started"
+    sleep 2
+    echo ""
+    echo "=== Xray service status ==="
+    systemctl status xray.service --no-pager -l || true
+    echo ""
+    echo "=== Checking if Xray is running ==="
+    if systemctl is-active --quiet xray.service; then
+      echo "✓ Xray service is ACTIVE"
+    else
+      echo "✗ Xray service is NOT active"
+      echo "=== Service logs ==="
+      journalctl -u xray.service -n 20 --no-pager || true
+    fi
   - |
+    echo "=========================================="
     echo "=== Enabling Xray update timer ==="
+    echo "=========================================="
     systemctl enable xray-update.timer
     systemctl start xray-update.timer
+    echo "✓ Update timer enabled and started"
   - |
+    echo "=========================================="
     echo "=== Final status check ==="
-    echo "Xray service status:"
-    systemctl is-active xray.service || echo "Service not active"
-    echo "Xray binary:"
-    /usr/local/bin/xray version || echo "Xray not found"
-    echo "Config file:"
-    test -f /etc/xray/config.json && echo "Config exists" || echo "Config NOT found"
-    echo "Credentials file:"
-    test -f /root/xray-credentials.json && echo "Credentials exist" || echo "Credentials NOT found"
+    echo "=========================================="
+    echo ""
+    echo "1. Xray binary:"
+    if [ -f /usr/local/bin/xray ]; then
+      echo "   ✓ Binary exists at /usr/local/bin/xray"
+      /usr/local/bin/xray version 2>&1 | head -3 || echo "   ✗ Version check failed"
+    else
+      echo "   ✗ Binary NOT found"
+    fi
+    echo ""
+    echo "2. Xray config:"
+    if [ -f /etc/xray/config.json ]; then
+      echo "   ✓ Config exists at /etc/xray/config.json"
+      echo "   Config size: $(stat -c%s /etc/xray/config.json) bytes"
+    else
+      echo "   ✗ Config NOT found"
+    fi
+    echo ""
+    echo "3. Credentials file:"
+    if [ -f /root/xray-credentials.json ]; then
+      echo "   ✓ Credentials exist at /root/xray-credentials.json"
+      echo "   UUID: $(jq -r '.uuid' /root/xray-credentials.json | cut -c1-8)..."
+    else
+      echo "   ✗ Credentials NOT found"
+    fi
+    echo ""
+    echo "4. Xray service:"
+    if systemctl is-active --quiet xray.service; then
+      echo "   ✓ Service is ACTIVE"
+      echo "   Service status: $(systemctl is-active xray.service)"
+    else
+      echo "   ✗ Service is NOT active"
+      echo "   Service status: $(systemctl is-active xray.service || echo 'inactive')"
+    fi
+    echo ""
+    echo "5. Xray listening ports:"
+    PORT=$(jq -r '.inbounds[0].port // empty' /etc/xray/config.json 2>/dev/null || echo "")
+    if [ -n "$PORT" ]; then
+      if ss -tlnp 2>/dev/null | grep -q ":$PORT "; then
+        echo "   ✓ Listening on port $PORT"
+      else
+        echo "   ✗ NOT listening on port $PORT"
+      fi
+    else
+      echo "   ? Could not determine port from config"
+    fi
+    echo ""
+    echo "6. Process check:"
+    if pgrep -x xray > /dev/null; then
+      echo "   ✓ Xray process is running (PID: $(pgrep -x xray))"
+    else
+      echo "   ✗ Xray process is NOT running"
+    fi
+    echo ""
+    echo "=========================================="
+    echo "=== Bootstrap completed ==="
+    echo "=========================================="
