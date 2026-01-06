@@ -17,159 +17,71 @@
         update_cache: yes
         state: present
 
-    - name: Check current version file
-      stat:
-        path: /usr/local/share/xray/version
-      register: xray_version_stat
-      changed_when: false
-
-    - name: Read current version (if present)
-      shell: cat /usr/local/share/xray/version
-      register: xray_current_version
-      changed_when: false
-      failed_when: false
-      when: xray_version_stat.stat.exists
-
     - name: Get latest Xray tag
       shell: curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name'
       register: xray_tag
-      changed_when: false
 
-    - name: Decide if Xray install/update needed
-      set_fact:
-        xray_install_needed: "{{ (not xray_version_stat.stat.exists) or ((xray_tag.stdout | trim) != (xray_current_version.stdout | default('') | trim)) }}"
-      changed_when: false
+    - name: Download Xray archive (latest)
+      get_url:
+        url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_tag.stdout }}/Xray-{{ xray_arch }}.zip"
+        dest: /tmp/xray.zip
+        mode: '0644'
 
-    - name: Install/update Xray (latest)
-      block:
-        - name: Download Xray archive
-          get_url:
-            url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_tag.stdout }}/Xray-{{ xray_arch }}.zip"
-            dest: /tmp/xray.zip
-            mode: '0644'
+    - name: Ensure temp dir exists
+      file:
+        path: /tmp/xray
+        state: directory
+        mode: '0755'
 
-        - name: Ensure temp dir exists
-          file:
-            path: /tmp/xray
-            state: directory
-            mode: '0755'
+    - name: Unzip Xray archive
+      unarchive:
+        src: /tmp/xray.zip
+        dest: /tmp/xray
+        remote_src: yes
 
-        - name: Unzip Xray archive
-          unarchive:
-            src: /tmp/xray.zip
-            dest: /tmp/xray
-            remote_src: yes
+    - name: Install Xray binaries and data (always)
+      shell: |
+        set -e
+        install -d /usr/local/bin /usr/local/share/xray
+        install -m 755 /tmp/xray/xray /usr/local/bin/xray
+        install -m 644 /tmp/xray/geoip.dat /usr/local/share/xray/geoip.dat
+        install -m 644 /tmp/xray/geosite.dat /usr/local/share/xray/geosite.dat
+        echo "{{ xray_tag.stdout }}" > /usr/local/share/xray/version
 
-        - name: Install Xray binaries and data
-          shell: |
-            set -e
-            install -d /usr/local/bin /usr/local/share/xray
-            install -m 755 /tmp/xray/xray /usr/local/bin/xray
-            install -m 644 /tmp/xray/geoip.dat /usr/local/share/xray/geoip.dat
-            install -m 644 /tmp/xray/geosite.dat /usr/local/share/xray/geosite.dat
-            echo "{{ xray_tag.stdout }}" > /usr/local/share/xray/version
-          changed_when: true
-
-        - name: Cleanup temp files
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /tmp/xray
-            - /tmp/xray.zip
-      when: xray_install_needed
-
-    - name: Check if config exists
-      stat:
-        path: /etc/xray/config.json
-      register: xray_config_stat
-      changed_when: false
-
-    - name: Check if credentials exist
-      stat:
-        path: /root/xray-credentials.json
-      register: xray_creds_stat
-      changed_when: false
-
-    - name: Read existing Reality privateKey (if config exists)
-      command: jq -r '.inbounds[0].streamSettings.realitySettings.privateKey // ""' /etc/xray/config.json
-      register: xray_cfg_private_key
-      changed_when: false
-      failed_when: false
-      when: xray_config_stat.stat.exists
-
-    - name: Read existing Reality shortId (if config exists)
-      command: jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0] // ""' /etc/xray/config.json
-      register: xray_cfg_short_id
-      changed_when: false
-      failed_when: false
-      when: xray_config_stat.stat.exists
-
-    - name: Decide if config/creds generation needed
-      set_fact:
-        xray_regen_needed: >-
-          {{
-            (not xray_config_stat.stat.exists)
-            or (not xray_creds_stat.stat.exists)
-            or ((xray_cfg_private_key.stdout | default('') | trim) == '')
-            or (not ((xray_cfg_private_key.stdout | default('') | trim) is match('^[A-Za-z0-9_-]{40,}$')))
-            or ((xray_cfg_short_id.stdout | default('') | trim) == '')
-            or (not ((xray_cfg_short_id.stdout | default('') | trim) is match('^[0-9a-f]{16}$')))
-          }}
-      changed_when: false
+    - name: Cleanup temp files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/xray
+        - /tmp/xray.zip
 
     - name: Ensure /etc/xray exists
       file:
         path: /etc/xray
         state: directory
         mode: '0755'
-      when: xray_regen_needed
 
     - name: Generate UUID
       command: cat /proc/sys/kernel/random/uuid
       register: xray_uuid_cmd
-      changed_when: false
-      when: xray_regen_needed
 
     - name: Generate Reality keys (Xray 25.x uses Password as public key)
       command: /usr/local/bin/xray x25519
       register: xray_x25519_cmd
-      changed_when: false
-      when: xray_regen_needed
-
-    - name: Parse Reality keys
-      set_fact:
-        xray_uuid: "{{ xray_uuid_cmd.stdout | trim }}"
-        xray_private_key: >-
-          {{
-            (
-              (xray_x25519_cmd.stdout | regex_search('PrivateKey:\\s*([^\\s]+)', '\\1'))
-              | default('')
-              | string
-              | regex_replace("^\\['", "")
-              | regex_replace("'\\]$", "")
-            )
-          }}
-        xray_public_key: >-
-          {{
-            (
-              (xray_x25519_cmd.stdout | regex_search('(Password|PublicKey):\\s*([^\\s]+)', '\\2'))
-              | default('')
-              | string
-              | regex_replace("^\\['", "")
-              | regex_replace("'\\]$", "")
-            )
-          }}
-      changed_when: false
-      when: xray_regen_needed
 
     - name: Generate Short ID
       command: openssl rand -hex 8
       register: xray_short_id_cmd
-      changed_when: false
-      when: xray_regen_needed
 
-    - name: Write Xray config
+    - name: Parse Reality keys
+      set_fact:
+        xray_uuid: "{{ xray_uuid_cmd.stdout | trim }}"
+        xray_private_key: "{{ (xray_x25519_cmd.stdout | regex_findall('PrivateKey:\\s*([^\\s]+)') | first | default('')) | regex_replace('[\\[\\]\"\\'']', '') }}"
+        xray_public_key: "{{ (xray_x25519_cmd.stdout | regex_findall('(?:Password|PublicKey):\\s*([^\\s]+)') | first | default('')) | regex_replace('[\\[\\]\"\\'']', '') }}"
+        xray_short_id: "{{ xray_short_id_cmd.stdout | trim }}"
+
+    - name: Write Xray config (always)
       copy:
         dest: /etc/xray/config.json
         mode: '0644'
@@ -193,15 +105,14 @@
                   "xver": 0,
                   "serverNames": ["{{ xray_server_name }}"],
                   "privateKey": "{{ xray_private_key }}",
-                  "shortIds": ["{{ xray_short_id_cmd.stdout | trim }}"]
+                  "shortIds": ["{{ xray_short_id }}"]
                 }
               }
             }],
             "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
           }
-      when: xray_regen_needed
 
-    - name: Write credentials
+    - name: Write credentials (always)
       copy:
         dest: /root/xray-credentials.json
         mode: '0600'
@@ -209,13 +120,11 @@
           {
             "uuid": "{{ xray_uuid }}",
             "public_key": "{{ xray_public_key }}",
-            "short_id": "{{ xray_short_id_cmd.stdout | trim }}"
+            "short_id": "{{ xray_short_id }}"
           }
-      when: xray_regen_needed
 
     - name: Validate config
-      shell: /usr/local/bin/xray -test -c /etc/xray/config.json
-      changed_when: false
+      command: /usr/local/bin/xray -test -c /etc/xray/config.json
 
     - name: Install systemd unit
       copy:
