@@ -70,7 +70,7 @@ jobs:
             --private-key ~/.ssh/id_rsa \
             --ssh-common-args="-o StrictHostKeyChecking=no" \
             ansible/install-xray.yml \
-            -e "xray_port=${{ steps.terraform_outputs.outputs.xray_port }} xray_server_name=${{ steps.terraform_outputs.outputs.xray_server_name }} xray_force_regen=true"
+            -e "xray_port=${{ steps.terraform_outputs.outputs.xray_port }} xray_server_name=${{ steps.terraform_outputs.outputs.xray_server_name }}"
 
       - name: Generate Client Configuration
         run: |
