@@ -12,11 +12,13 @@ write_files:
   - path: /usr/local/bin/xray-update
     permissions: "0755"
     owner: root:root
-    content: ${xray_update_script}
+    content: |
+${xray_update_script}
   - path: /usr/local/bin/xray-bootstrap
     permissions: "0755"
     owner: root:root
-    content: ${xray_bootstrap_script}
+    content: |
+${xray_bootstrap_script}
   - path: /etc/systemd/system/xray.service
     permissions: "0644"
     owner: root:root

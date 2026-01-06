@@ -31,11 +31,11 @@ resource "digitalocean_droplet" "xray" {
   user_data = templatefile("${path.module}/cloud-init.yaml", {
     xray_port            = var.xray_port
     xray_server_name     = var.xray_server_name
-    xray_update_script   = file("${path.module}/scripts/xray-update.sh")
-    xray_bootstrap_script = templatefile("${path.module}/scripts/xray-bootstrap.sh.tpl", {
+    xray_update_script   = indent(6, file("${path.module}/scripts/xray-update.sh"))
+    xray_bootstrap_script = indent(6, templatefile("${path.module}/scripts/xray-bootstrap.sh.tpl", {
       xray_port        = var.xray_port
       xray_server_name = var.xray_server_name
-    })
+    }))
   })
 }
 
