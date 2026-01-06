@@ -91,9 +91,29 @@
       register: xray_creds_stat
       changed_when: false
 
+    - name: Read existing Reality privateKey (if config exists)
+      command: jq -r '.inbounds[0].streamSettings.realitySettings.privateKey // ""' /etc/xray/config.json
+      register: xray_cfg_private_key
+      changed_when: false
+      failed_when: false
+      when: xray_config_stat.stat.exists
+
+    - name: Read existing Reality shortId (if config exists)
+      command: jq -r '.inbounds[0].streamSettings.realitySettings.shortIds[0] // ""' /etc/xray/config.json
+      register: xray_cfg_short_id
+      changed_when: false
+      failed_when: false
+      when: xray_config_stat.stat.exists
+
     - name: Decide if config/creds generation needed
       set_fact:
-        xray_regen_needed: "{{ (not xray_config_stat.stat.exists) or (not xray_creds_stat.stat.exists) }}"
+        xray_regen_needed: >-
+          {{
+            (not xray_config_stat.stat.exists)
+            or (not xray_creds_stat.stat.exists)
+            or ((xray_cfg_private_key.stdout | default('') | trim) == '')
+            or ((xray_cfg_short_id.stdout | default('') | trim) == '')
+          }}
       changed_when: false
 
     - name: Ensure /etc/xray exists
