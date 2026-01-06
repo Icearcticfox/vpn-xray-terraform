@@ -1,0 +1,11 @@
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+crash.log
+crash.*.log
+.history
+*.tfvars
+.terraform/xray-credentials.json
+.terraform/xray-client.txt
+.terraform/xray-client.json

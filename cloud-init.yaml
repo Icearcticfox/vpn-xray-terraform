@@ -1,0 +1,164 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - unzip
+  - openssl
+  - ca-certificates
+  - jq
+
+write_files:
+  - path: /usr/local/bin/xray-update
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      arch="linux-64"
+      tmpdir=$(mktemp -d)
+      tag=$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | sed -n 's/.*"tag_name": "\(.*\)".*/\1/p')
+      if [ -z "$tag" ]; then
+        echo "Failed to determine Xray release tag" >&2
+        exit 1
+      fi
+      current=""
+      if [ -f /usr/local/share/xray/version ]; then
+        current=$(cat /usr/local/share/xray/version)
+      fi
+      if [ "$tag" = "$current" ]; then
+        exit 0
+      fi
+      url="https://github.com/XTLS/Xray-core/releases/download/${tag}/Xray-${arch}.zip"
+      curl -fsSL "$url" -o "$tmpdir/xray.zip"
+      unzip -q "$tmpdir/xray.zip" -d "$tmpdir"
+      install -d /usr/local/bin /usr/local/share/xray
+      install -m 755 "$tmpdir/xray" /usr/local/bin/xray
+      install -m 644 "$tmpdir/geoip.dat" /usr/local/share/xray/geoip.dat
+      install -m 644 "$tmpdir/geosite.dat" /usr/local/share/xray/geosite.dat
+      echo "$tag" > /usr/local/share/xray/version
+      rm -rf "$tmpdir"
+  - path: /usr/local/bin/xray-bootstrap
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      XRAY_PORT=${xray_port}
+      XRAY_SERVER_NAME="${xray_server_name}"
+
+      /usr/local/bin/xray-update
+
+      if [ ! -f /etc/xray/config.json ]; then
+        uuid=$(cat /proc/sys/kernel/random/uuid)
+        keys=$(/usr/local/bin/xray x25519)
+        private_key=$(echo "$keys" | awk '/Private key/ {print $3}')
+        public_key=$(echo "$keys" | awk '/Public key/ {print $3}')
+        short_id=$(openssl rand -hex 8)
+
+        mkdir -p /etc/xray
+
+        cat > /etc/xray/config.json <<CONFIG
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "listen": "0.0.0.0",
+      "port": ${XRAY_PORT},
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "${uuid}",
+            "flow": "xtls-rprx-vision"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "${XRAY_SERVER_NAME}:443",
+          "xver": 0,
+          "serverNames": [
+            "${XRAY_SERVER_NAME}"
+          ],
+          "privateKey": "${private_key}",
+          "shortIds": [
+            "${short_id}"
+          ]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    }
+  ]
+}
+CONFIG
+
+        # Save credentials for Terraform to generate client configs
+        cat > /root/xray-credentials.json <<CREDS
+{
+  "uuid": "${uuid}",
+  "public_key": "${public_key}",
+  "short_id": "${short_id}"
+}
+CREDS
+      fi
+  - path: /etc/systemd/system/xray.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Xray Service
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/xray run -c /etc/xray/config.json
+      Restart=on-failure
+      RestartSec=3
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/xray-update.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Update Xray binaries
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/xray-update
+      ExecStartPost=/bin/systemctl restart xray.service
+  - path: /etc/systemd/system/xray-update.timer
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Daily Xray update
+
+      [Timer]
+      OnBootSec=5m
+      OnUnitActiveSec=1d
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - /usr/local/bin/xray-bootstrap
+  - systemctl daemon-reload
+  - systemctl enable --now xray.service
+  - systemctl enable --now xray-update.timer
