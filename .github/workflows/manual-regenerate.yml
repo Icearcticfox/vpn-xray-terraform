@@ -54,10 +54,14 @@ jobs:
           echo "xray_server_name=$XRAY_SERVER_NAME" >> $GITHUB_OUTPUT
           echo "✓ Extracted outputs: IP=$DROPLET_IP, Port=$XRAY_PORT, Server=$XRAY_SERVER_NAME"
 
-      - name: Install Ansible
+      - name: Install Ansible (idempotent)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
+          if ! command -v ansible >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ansible
+          else
+            echo "Ansible already installed"
+          fi
 
       - name: Regenerate Xray credentials via Ansible
         run: |

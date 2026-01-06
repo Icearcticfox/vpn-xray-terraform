@@ -109,10 +109,14 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo "✓ SSH key configured"
 
-      - name: Install Ansible
+      - name: Install Ansible (idempotent)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
+          if ! command -v ansible >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ansible
+          else
+            echo "Ansible already installed"
+          fi
 
       - name: Install Xray via Ansible
         run: |

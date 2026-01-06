@@ -34,7 +34,6 @@
         curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r '.tag_name'
       register: xray_tag
       changed_when: false
-
     - name: Download Xray archive
       get_url:
         url: "https://github.com/XTLS/Xray-core/releases/download/{{ xray_tag.stdout }}/Xray-{{ xray_arch }}.zip"
@@ -53,6 +52,7 @@
         dest: /tmp/xray
         remote_src: yes
         creates: /tmp/xray/xray
+      when: not xray_binary_stat.stat.exists
 
     - name: Install Xray binaries and data
       shell: |
@@ -94,6 +94,13 @@
         xray_private_key: "{{ xray_keys.stdout_lines | select('match','^PRIVATE_KEY=') | list | first | regex_replace('^PRIVATE_KEY=','') }}"
         xray_public_key: "{{ xray_keys.stdout_lines | select('match','^PUBLIC_KEY=') | list | first | regex_replace('^PUBLIC_KEY=','') }}"
         xray_short_id: "{{ xray_keys.stdout_lines | select('match','^SHORT_ID=') | list | first | regex_replace('^SHORT_ID=','') }}"
+      when: xray_regen_needed
+
+    - name: Ensure /etc/xray exists
+      file:
+        path: /etc/xray
+        state: directory
+        mode: '0755'
       when: xray_regen_needed
 
     - name: Write Xray config
