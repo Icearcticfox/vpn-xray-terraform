@@ -49,7 +49,7 @@ The Terraform Cloud backend is already configured for organization `icefox_infra
 - `size` - Droplet size slug (default: `s-1vcpu-512mb-10gb`)
 - `droplet_name` - Droplet name (default: `xray-vpn`)
 - `xray_port` - Xray server port (default: `443`)
-- `xray_server_name` - Xray Reality server name/SNI (default: `www.microsoft.com`)
+- `xray_server_name` - Xray Reality server name/SNI (default: `www.ozon.ru`)
 - `allowed_ssh_ips` - List of IP addresses/CIDR blocks allowed to SSH (default: `["0.0.0.0/0", "::/0"]`)
 
 ### Example: Custom Configuration
@@ -57,7 +57,7 @@ The Terraform Cloud backend is already configured for organization `icefox_infra
 ```hcl
 terraform apply \
   -var="xray_port=8443" \
-  -var="xray_server_name=www.microsoft.com" \
+  -var="xray_server_name=www.ozon.ru" \
   -var='allowed_ssh_ips=["1.2.3.4/32"]'
 ```
 
@@ -120,6 +120,8 @@ python3 ./scripts/vpn_cli.py qr ./server-config.json --server "$(terraform outpu
 ## Xray Notes
 
 - The server config is stored at `/etc/xray/config.json`.
+- Uses **WebSocket (ws)** transport protocol for better compatibility.
+- Uses **Reality** security with Russian SNI (`www.ozon.ru` by default) for better performance in Russia.
 - The CI workflow generates a VLESS Reality share link + QR and sends them to Telegram (if configured).
 - To change the port or Reality server name, update Terraform variables and re-run the pipeline.
 
