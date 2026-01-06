@@ -9,6 +9,11 @@
     xray_binary_stat:
       stat:
         exists: false
+    xray_config_stat:
+      stat:
+        exists: false
+    xray_creds_valid: false
+    xray_config_valid: false
 
   tasks:
     - name: Check xray binary presence
@@ -23,6 +28,41 @@
       changed_when: false
       failed_when: false
       when: xray_binary_stat.stat.exists
+
+    - name: Check config presence
+      stat:
+        path: /etc/xray/config.json
+      register: xray_config_stat
+      changed_when: false
+      failed_when: false
+
+    - name: Read existing config if present
+      slurp:
+        path: /etc/xray/config.json
+      register: config_slurp
+      when: xray_config_stat.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Parse existing config
+      set_fact:
+        xray_config_valid: >-
+          {{
+            (cfg | length > 0)
+            and (cfg.inbounds is defined)
+            and (cfg.inbounds | length > 0)
+            and (cfg.inbounds[0].streamSettings is defined)
+            and (cfg.inbounds[0].streamSettings.realitySettings is defined)
+            and (cfg.inbounds[0].streamSettings.realitySettings.privateKey | default('') | length > 0)
+            and (cfg.inbounds[0].streamSettings.realitySettings.shortIds | default([]) | length > 0)
+          }}
+        xray_config_private_key: "{{ cfg.inbounds[0].streamSettings.realitySettings.privateKey | default('') }}"
+        xray_config_short_id: "{{ (cfg.inbounds[0].streamSettings.realitySettings.shortIds | default([])) | first | default('') }}"
+      vars:
+        cfg: "{{ (config_slurp.content | b64decode | from_json) if (config_slurp is defined and config_slurp.content is defined) else {} }}"
+      when: xray_config_stat.stat.exists
+      changed_when: false
+      failed_when: false
 
     - name: Get latest Xray tag
       shell: |
@@ -42,9 +82,42 @@
       register: creds_stat
       changed_when: false
 
+    - name: Read existing credentials if present
+      slurp:
+        path: /root/xray-credentials.json
+      register: creds_slurp
+      when: creds_stat.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Parse existing credentials
+      set_fact:
+        xray_creds_valid: >-
+          {{
+            (creds | length > 0)
+            and (creds.uuid is defined and creds.uuid | length > 0)
+            and (creds.public_key is defined and creds.public_key | length > 0)
+            and (creds.short_id is defined and creds.short_id | length > 0)
+          }}
+        xray_existing_uuid: "{{ creds.uuid | default('') }}"
+        xray_existing_public_key: "{{ creds.public_key | default('') }}"
+        xray_existing_short_id: "{{ creds.short_id | default('') }}"
+      vars:
+        creds: "{{ (creds_slurp.content | b64decode | from_json) if (creds_slurp is defined and creds_slurp.content is defined) else {} }}"
+      when: creds_stat.stat.exists
+      changed_when: false
+      failed_when: false
+
     - name: Decide if regeneration needed
       set_fact:
-        xray_regen_needed: "{{ xray_force_regen | bool or (not creds_stat.stat.exists) }}"
+        xray_regen_needed: >-
+          {{
+            xray_force_regen | bool
+            or (not creds_stat.stat.exists)
+            or (not xray_creds_valid)
+            or (not xray_config_stat.stat.exists)
+            or (not xray_config_valid)
+          }}
       changed_when: false
 
     - name: Install dependencies
@@ -179,6 +252,13 @@
             "short_id": "{{ xray_short_id }}"
           }
       when: xray_regen_needed
+
+    - name: Validate Xray config
+      shell: /usr/local/bin/xray -test -c /etc/xray/config.json
+      register: xray_config_test
+      changed_when: false
+      failed_when: xray_config_test.rc != 0
+      when: xray_regen_needed or xray_install_needed
 
     - name: Systemd unit for Xray
       copy:
