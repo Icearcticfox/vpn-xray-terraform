@@ -64,3 +64,10 @@ variable "ssh_private_key_path" {
   default     = "~/.ssh/id_rsa"
   sensitive   = true
 }
+
+variable "ssh_private_key" {
+  description = "SSH private key content (alternative to ssh_private_key_path, for CI/CD)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

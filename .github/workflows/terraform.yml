@@ -32,6 +32,7 @@ jobs:
           echo "=== Debug: Checking secrets ==="
           echo "DIGITAL_OCEAN secret exists: $([ -n "${{ secrets.DIGITAL_OCEAN }}" ] && echo 'YES' || echo 'NO')"
           echo "ICEFOX_FINGERPRINT secret exists: $([ -n "${{ secrets.ICEFOX_FINGERPRINT }}" ] && echo 'YES' || echo 'NO')"
+          echo "SSH_PRIVATE_KEY secret exists: $([ -n "${{ secrets.SSH_PRIVATE_KEY }}" ] && echo 'YES' || echo 'NO')"
           echo "TERRAFORM_XRAY secret exists: $([ -n "${{ secrets.TERRAFORM_XRAY }}" ] && echo 'YES' || echo 'NO')"
           echo "TELEGRAM_BOT_TOKEN secret exists: $([ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo 'YES' || echo 'NO')"
           echo "TELEGRAM_CHAT_ID secret exists: $([ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && echo 'YES' || echo 'NO')"
@@ -56,6 +57,14 @@ jobs:
           TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
           TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✓ SSH key configured"
 
       - name: Create terraform.tfvars file
         run: |

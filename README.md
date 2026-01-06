@@ -223,16 +223,21 @@ Add these secrets in your repository (Settings → Secrets and variables → Act
 2. **ICEFOX_FINGERPRINT** - SSH key fingerprint from DigitalOcean
    - Find at: https://cloud.digitalocean.com/account/security
 
-3. **TERRAFORM_XRAY** - Terraform Cloud user token
+3. **SSH_PRIVATE_KEY** - SSH private key content (the same key used in DigitalOcean)
+   - Get your private key: `cat ~/.ssh/id_rsa` (or path to your SSH key)
+   - Copy the entire key including `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`
+   - This key is used by Terraform to connect to the droplet for configuration
+
+4. **TERRAFORM_XRAY** - Terraform Cloud user token
    - Generate at: https://app.terraform.io/app/settings/tokens
    - Token format: `kIzz3FiqlAWhVg.atlasv1.xxx...`
 
 ### Optional GitHub Secrets (for Telegram notifications)
 
-4. **TELEGRAM_BOT_TOKEN** - Telegram bot token (optional)
+5. **TELEGRAM_BOT_TOKEN** - Telegram bot token (optional)
    - Create bot via [@BotFather](https://t.me/BotFather)
 
-5. **TELEGRAM_CHAT_ID** - Telegram chat ID or channel username (optional)
+6. **TELEGRAM_CHAT_ID** - Telegram chat ID or channel username (optional)
    - Format: `-1001234567890` for channels or `@channel_name`
 
 ### Terraform Cloud Workspace
