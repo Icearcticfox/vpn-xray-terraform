@@ -44,7 +44,6 @@ resource "null_resource" "generate_client_config" {
   # Wait for cloud-init to complete and credentials file to be ready
   provisioner "local-exec" {
     command = <<-EOT
-      sleep 30
       # Create SSH key file if using ssh_private_key variable
       if [ -n "${var.ssh_private_key}" ]; then
         mkdir -p ~/.ssh
@@ -54,10 +53,76 @@ resource "null_resource" "generate_client_config" {
       else
         SSH_KEY_PATH=${pathexpand(var.ssh_private_key_path)}
       fi
-      # Wait for credentials file
-      for i in {1..30}; do
-        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${digitalocean_droplet.xray.ipv4_address} "test -f /root/xray-credentials.json" && break || sleep 2
+      
+      # Wait for droplet to be ready (initial sleep)
+      echo "Waiting for droplet to initialize..."
+      sleep 60
+      
+      # Wait for cloud-init to complete
+      echo "Waiting for cloud-init to complete..."
+      MAX_CLOUD_INIT_ATTEMPTS=30
+      CLOUD_INIT_ATTEMPT=0
+      while [ $CLOUD_INIT_ATTEMPT -lt $MAX_CLOUD_INIT_ATTEMPTS ]; do
+        STATUS=$(ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o UserKnownHostsFile=/dev/null root@${digitalocean_droplet.xray.ipv4_address} "cloud-init status 2>/dev/null | head -1" || echo "unknown")
+        echo "Cloud-init attempt $CLOUD_INIT_ATTEMPT/$MAX_CLOUD_INIT_ATTEMPTS - Status: $STATUS"
+        
+        if echo "$STATUS" | grep -q "status: done"; then
+          echo "✓ Cloud-init completed!"
+          # Show last lines of cloud-init logs
+          echo ""
+          echo "=== Cloud-init logs (last 30 lines) ==="
+          ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "tail -30 /var/log/cloud-init-output.log 2>/dev/null || tail -30 /var/log/cloud-init.log 2>/dev/null || echo 'Logs not available yet'"
+          echo ""
+          break
+        fi
+        CLOUD_INIT_ATTEMPT=$((CLOUD_INIT_ATTEMPT + 1))
+        sleep 5
       done
+      
+      # Wait for xray-bootstrap to complete and credentials file to be created
+      echo "Waiting for xray-credentials.json to be created..."
+      MAX_ATTEMPTS=60
+      ATTEMPT=0
+      while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+        if ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o UserKnownHostsFile=/dev/null root@${digitalocean_droplet.xray.ipv4_address} "test -f /root/xray-credentials.json" 2>/dev/null; then
+          echo "✓ xray-credentials.json found!"
+          break
+        fi
+        ATTEMPT=$((ATTEMPT + 1))
+        echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: waiting for credentials file..."
+        sleep 5
+      done
+      
+      if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        echo "ERROR: xray-credentials.json was not created after $MAX_ATTEMPTS attempts"
+        echo ""
+        echo "=== Cloud-init status ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "cloud-init status || true"
+        echo ""
+        echo "=== Cloud-init logs (last 50 lines) ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "tail -50 /var/log/cloud-init-output.log || tail -50 /var/log/cloud-init.log || echo 'No cloud-init logs found'"
+        echo ""
+        echo "=== /root directory contents ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "ls -la /root/ || true"
+        echo ""
+        echo "=== Checking xray-bootstrap process ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "ps aux | grep -E 'xray|bootstrap' || true"
+        echo ""
+        echo "=== Checking if xray service exists ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "systemctl status xray.service || true"
+        echo ""
+        echo "=== Checking xray-bootstrap script ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "test -f /usr/local/bin/xray-bootstrap && echo 'xray-bootstrap exists' || echo 'xray-bootstrap NOT found'"
+        echo ""
+        echo "=== Checking xray config ==="
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "test -f /etc/xray/config.json && echo 'xray config exists' || echo 'xray config NOT found'"
+        exit 1
+      fi
+      
+      # Show some debug info even on success
+      echo ""
+      echo "=== Server status (for debugging) ==="
+      ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "echo 'Cloud-init status:' && cloud-init status 2>/dev/null || echo 'N/A'; echo 'Xray service:' && systemctl is-active xray.service 2>/dev/null || echo 'N/A'"
     EOT
   }
 
@@ -73,7 +138,7 @@ resource "null_resource" "generate_client_config" {
   provisioner "local-exec" {
     command = <<-EOT
       mkdir -p ${path.module}/.terraform
-      # Determine SSH key path
+      # Determine SSH key path (reuse from previous step)
       if [ -n "${var.ssh_private_key}" ]; then
         mkdir -p ~/.ssh
         echo "${var.ssh_private_key}" > ~/.ssh/id_rsa
@@ -82,7 +147,16 @@ resource "null_resource" "generate_client_config" {
       else
         SSH_KEY_PATH=${pathexpand(var.ssh_private_key_path)}
       fi
-      scp -i $SSH_KEY_PATH -o StrictHostKeyChecking=no root@${digitalocean_droplet.xray.ipv4_address}:/root/xray-credentials.json ${path.module}/.terraform/xray-credentials.json
+      
+      # Verify file exists before copying
+      if ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "test -f /root/xray-credentials.json" 2>/dev/null; then
+        scp -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address}:/root/xray-credentials.json ${path.module}/.terraform/xray-credentials.json
+        echo "✓ Credentials file copied successfully"
+      else
+        echo "ERROR: xray-credentials.json not found on server"
+        ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@${digitalocean_droplet.xray.ipv4_address} "ls -la /root/ | head -20" || true
+        exit 1
+      fi
     EOT
   }
 
