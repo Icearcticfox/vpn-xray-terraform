@@ -77,8 +77,8 @@
     - name: Parse Reality keys
       set_fact:
         xray_uuid: "{{ xray_uuid_cmd.stdout | trim }}"
-        xray_private_key: "{{ (xray_x25519_cmd.stdout | regex_findall('PrivateKey:\\s*([^\\s]+)') | first | default('')) | regex_replace('[\\[\\]\"\\'']', '') }}"
-        xray_public_key: "{{ (xray_x25519_cmd.stdout | regex_findall('(?:Password|PublicKey):\\s*([^\\s]+)') | first | default('')) | regex_replace('[\\[\\]\"\\'']', '') }}"
+        xray_private_key: "{{ (xray_x25519_cmd.stdout | regex_findall('PrivateKey:\\s*([^\\s]+)') | first | default('')) | trim }}"
+        xray_public_key: "{{ (xray_x25519_cmd.stdout | regex_findall('(?:Password|PublicKey):\\s*([^\\s]+)') | first | default('')) | trim }}"
         xray_short_id: "{{ xray_short_id_cmd.stdout | trim }}"
 
     - name: Write Xray config (always)
