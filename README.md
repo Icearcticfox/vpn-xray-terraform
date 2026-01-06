@@ -120,7 +120,7 @@ python3 ./scripts/vpn_cli.py qr ./server-config.json --server "$(terraform outpu
 ## Xray Notes
 
 - The server config is stored at `/etc/xray/config.json`.
-- Uses **WebSocket (ws)** transport protocol for better compatibility.
+- Uses **XHTTP (HTTP/2)** transport protocol for better compatibility.
 - Uses **Reality** security with Russian SNI (`www.ozon.ru` by default) for better performance in Russia.
 - The CI workflow generates a VLESS Reality share link + QR and sends them to Telegram (if configured).
 - To change the port or Reality server name, update Terraform variables and re-run the pipeline.

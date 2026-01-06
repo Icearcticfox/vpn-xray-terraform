@@ -97,11 +97,8 @@
                 "decryption": "none"
               },
               "streamSettings": {
-                "network": "ws",
+                "network": "xhttp",
                 "security": "reality",
-                "wsSettings": {
-                  "path": "/"
-                },
                 "realitySettings": {
                   "show": false,
                   "dest": "{{ xray_server_name }}:443",
