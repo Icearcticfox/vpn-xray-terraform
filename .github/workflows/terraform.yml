@@ -27,23 +27,43 @@ jobs:
           terraform_version: 1.7.0
           cli_config_credentials_token: ${{ secrets.TERRAFORM_XRAY }}
 
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Check required secrets
+      - name: Debug - Check secrets availability
         run: |
+          echo "=== Debug: Checking secrets ==="
+          echo "DIGITAL_OCEAN secret exists: $([ -n "${{ secrets.DIGITAL_OCEAN }}" ] && echo 'YES' || echo 'NO')"
+          echo "ICEFOX_FINGERPRINT secret exists: $([ -n "${{ secrets.ICEFOX_FINGERPRINT }}" ] && echo 'YES' || echo 'NO')"
+          echo "TERRAFORM_XRAY secret exists: $([ -n "${{ secrets.TERRAFORM_XRAY }}" ] && echo 'YES' || echo 'NO')"
+          echo "TELEGRAM_BOT_TOKEN secret exists: $([ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo 'YES' || echo 'NO')"
+          echo "TELEGRAM_CHAT_ID secret exists: $([ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ] && echo 'YES' || echo 'NO')"
+          echo ""
+          echo "=== Debug: Environment variables ==="
+          echo "TF_VAR_do_token length: ${#TF_VAR_do_token}"
+          echo "TF_VAR_ssh_key_fingerprint length: ${#TF_VAR_ssh_key_fingerprint}"
+          echo "TF_VAR_telegram_bot_token length: ${#TF_VAR_telegram_bot_token}"
+          echo "TF_VAR_telegram_chat_id length: ${#TF_VAR_telegram_chat_id}"
+          echo ""
           if [ -z "$TF_VAR_do_token" ]; then
-            echo "Error: DIGITAL_OCEAN secret is not set"
+            echo "ERROR: TF_VAR_do_token is empty!"
             exit 1
           fi
           if [ -z "$TF_VAR_ssh_key_fingerprint" ]; then
-            echo "Error: ICEFOX_FINGERPRINT secret is not set"
+            echo "ERROR: TF_VAR_ssh_key_fingerprint is empty!"
             exit 1
           fi
-          echo "Required secrets are set"
+          echo "✓ All required environment variables are set"
         env:
           TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
           TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Terraform Init
+        run: terraform init
+        env:
+          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
+          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Validate
         run: terraform validate
