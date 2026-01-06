@@ -57,45 +57,25 @@ jobs:
           TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+      - name: Create terraform.tfvars file
+        run: |
+          cat > terraform.auto.tfvars <<EOF
+          do_token = "${{ secrets.DIGITAL_OCEAN }}"
+          ssh_key_fingerprint = "${{ secrets.ICEFOX_FINGERPRINT }}"
+          telegram_bot_token = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          telegram_chat_id = "${{ secrets.TELEGRAM_CHAT_ID }}"
+          EOF
+          echo "✓ Created terraform.auto.tfvars file"
+
       - name: Terraform Init
         run: terraform init
-        env:
-          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
-          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
-          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Validate
         run: terraform validate
-        env:
-          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
-          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
-          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Terraform Plan
-        run: |
-          terraform plan \
-            -var="do_token=${{ secrets.DIGITAL_OCEAN }}" \
-            -var="ssh_key_fingerprint=${{ secrets.ICEFOX_FINGERPRINT }}" \
-            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
-            -var="telegram_chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
-        env:
-          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
-          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
-          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: terraform plan
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/master'
-        run: |
-          terraform apply -auto-approve \
-            -var="do_token=${{ secrets.DIGITAL_OCEAN }}" \
-            -var="ssh_key_fingerprint=${{ secrets.ICEFOX_FINGERPRINT }}" \
-            -var="telegram_bot_token=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
-            -var="telegram_chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
-        env:
-          TF_VAR_do_token: ${{ secrets.DIGITAL_OCEAN }}
-          TF_VAR_ssh_key_fingerprint: ${{ secrets.ICEFOX_FINGERPRINT }}
-          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TF_VAR_telegram_chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: terraform apply -auto-approve
