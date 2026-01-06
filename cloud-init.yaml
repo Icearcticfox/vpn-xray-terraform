@@ -29,7 +29,7 @@ write_files:
       if [ "$tag" = "$current" ]; then
         exit 0
       fi
-      url="https://github.com/XTLS/Xray-core/releases/download/${tag}/Xray-${arch}.zip"
+      url="https://github.com/XTLS/Xray-core/releases/download/$${tag}/Xray-$${arch}.zip"
       curl -fsSL "$url" -o "$tmpdir/xray.zip"
       unzip -q "$tmpdir/xray.zip" -d "$tmpdir"
       install -d /usr/local/bin /usr/local/share/xray
@@ -67,12 +67,12 @@ write_files:
   "inbounds": [
     {
       "listen": "0.0.0.0",
-      "port": ${XRAY_PORT},
+      "port": $${XRAY_PORT},
       "protocol": "vless",
       "settings": {
         "clients": [
           {
-            "id": "${uuid}",
+            "id": "$${uuid}",
             "flow": "xtls-rprx-vision"
           }
         ],
@@ -83,14 +83,14 @@ write_files:
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "${XRAY_SERVER_NAME}:443",
+          "dest": "$${XRAY_SERVER_NAME}:443",
           "xver": 0,
           "serverNames": [
-            "${XRAY_SERVER_NAME}"
+            "$${XRAY_SERVER_NAME}"
           ],
-          "privateKey": "${private_key}",
+          "privateKey": "$${private_key}",
           "shortIds": [
-            "${short_id}"
+            "$${short_id}"
           ]
         }
       }
@@ -108,9 +108,9 @@ CONFIG
         # Save credentials for Terraform to generate client configs
         cat > /root/xray-credentials.json <<CREDS
 {
-  "uuid": "${uuid}",
-  "public_key": "${public_key}",
-  "short_id": "${short_id}"
+  "uuid": "$${uuid}",
+  "public_key": "$${public_key}",
+  "short_id": "$${short_id}"
 }
 CREDS
       fi
