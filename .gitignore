@@ -10,3 +10,5 @@ crash.*.log
 .terraform/xray-credentials.json
 .terraform/xray-client.txt
 .terraform/xray-client.json
+generated/
+*.png

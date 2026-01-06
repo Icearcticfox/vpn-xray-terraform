@@ -24,7 +24,7 @@ output "xray_config_info" {
     port        = var.xray_port
     server_name = var.xray_server_name
     address     = digitalocean_droplet.xray.ipv4_address
-    note        = "Client configuration is available in /root/xray-client.txt on the server"
+    note        = "Share link + QR are generated in CI and sent to Telegram (if configured). Server config: /etc/xray/config.json"
   }
 }
 

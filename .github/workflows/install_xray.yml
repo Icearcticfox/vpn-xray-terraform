@@ -144,12 +144,22 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo "✓ SSH key configured"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+
       - name: Generate Client Configuration
         run: |
-          ./scripts/generate-config.sh \
-            "${{ needs.terraform.outputs.droplet_ip }}" \
-            "${{ needs.terraform.outputs.xray_port }}" \
-            "${{ needs.terraform.outputs.xray_server_name }}" \
-            "${{ secrets.SSH_PRIVATE_KEY }}" \
-            "${{ secrets.TELEGRAM_BOT_TOKEN }}" \
-            "${{ secrets.TELEGRAM_CHAT_ID }}"
+          python3 ./scripts/vpn_cli.py generate \
+            --server "${{ needs.terraform.outputs.droplet_ip }}" \
+            --ssh-private-key "${{ secrets.SSH_PRIVATE_KEY }}" \
+            --name "reality-${{ needs.terraform.outputs.xray_port }}" \
+            --telegram-bot-token "${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            --telegram-chat-id "${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --print-link

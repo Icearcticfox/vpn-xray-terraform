@@ -36,25 +36,11 @@ variable "xray_port" {
 variable "xray_server_name" {
   description = "Xray Reality server name (SNI)"
   type        = string
-  default     = "www.cloudflare.com"
+  default     = "www.microsoft.com"
 }
 
 variable "allowed_ssh_ips" {
   description = "List of IP addresses/CIDR blocks allowed to SSH"
   type        = list(string)
   default     = ["0.0.0.0/0", "::/0"]
-}
-
-variable "ssh_private_key_path" {
-  description = "Path to SSH private key for remote-exec (optional, defaults to ~/.ssh/id_rsa)"
-  type        = string
-  default     = "~/.ssh/id_rsa"
-  sensitive   = true
-}
-
-variable "ssh_private_key" {
-  description = "SSH private key content (alternative to ssh_private_key_path, for CI/CD)"
-  type        = string
-  default     = ""
-  sensitive   = true
 }
