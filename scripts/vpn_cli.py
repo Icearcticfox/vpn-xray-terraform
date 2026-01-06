@@ -83,6 +83,21 @@ def tg_send_message(bot_token: str, chat_id: str, text: str) -> None:
                 raise UserError(f"Telegram sendMessage failed: HTTP {resp.status}\nResponse: {body}")
     except HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
+        # Check for chat migration error
+        if "migrate_to_chat_id" in body:
+            import json
+            try:
+                err_data = json.loads(body)
+                new_chat_id = err_data.get("parameters", {}).get("migrate_to_chat_id")
+                if new_chat_id:
+                    raise UserError(
+                        f"Telegram chat was upgraded to supergroup.\n"
+                        f"Old chat_id: {chat_id}\n"
+                        f"New chat_id: {new_chat_id}\n"
+                        f"Please update TELEGRAM_CHAT_ID secret to: {new_chat_id}"
+                    )
+            except Exception:
+                pass
         raise UserError(f"Telegram sendMessage failed: HTTP {e.code}\nResponse: {body}")
 
 
